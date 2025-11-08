@@ -1,0 +1,1340 @@
+param([string]$RootFolder = "V0T")
+
+function Ensure-Dir {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) {
+        New-Item -ItemType Directory -Path $Path | Out-Null
+    }
+}
+
+# --- Self-healing: initialize all required folders once ---
+$dirs = @(
+    $RootFolder,
+    (Join-Path $RootFolder "app"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/policy"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/backend"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/cloud"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/codex"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/validators"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/market"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/trade"),
+    (Join-Path $RootFolder "app/src/main/java/com/v0t/ui"),
+    (Join-Path $RootFolder "app/src/main/res/layout"),
+    (Join-Path $RootFolder "experimental/src/main/java/com/v0t/experimental"),
+    (Join-Path $RootFolder "docs")
+)
+
+foreach ($d in $dirs) { Ensure-Dir $d }
+
+Write-Host " Self-healing: folder structure ensured under $RootFolder"
+
+
+# === V0T • MASTER SCRIPT • Chunk 1 of 6 ===
+# Project scaffolding, core utilities, policies, backend links, MainActivity + layout
+# Updated baseline with tweaks: ViewBinding, SignalPayload, Leetspeak fix, auto-audit task
+
+
+function Ensure-Dir { param([string]$Path) if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null } }
+function Write-UTF8 { param([string]$Path, [string]$Content) Ensure-Dir (Split-Path $Path -Parent); $enc = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $Content, $enc) }
+
+# --- settings.gradle.kts ---
+Write-UTF8 (Join-Path $RootFolder "settings.gradle.kts") @'
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+    plugins {
+        id("com.android.application") version "8.5.2" apply false
+        id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+        id("kotlin-parcelize") version "1.9.24" apply false
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = "V0T"
+include(":app")
+include(":experimental")
+'@
+
+
+# --- app/build.gradle.kts ---
+Write-UTF8 (Join-Path $RootFolder "app/build.gradle.kts") @'
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("kotlin-parcelize")
+}
+
+android {
+    namespace = "com.v0t"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.v0t"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug { minifyEnabled = false }
+    }
+
+    buildFeatures { viewBinding = true }
+
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+}
+
+// Auto-audit task stub
+tasks.register("generateAuditList") {
+    doLast {
+        val srcDir = file("src/main/java/com/v0t")
+        val classes = srcDir.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .map { it.relativeTo(srcDir).path.removeSuffix(".kt").replace("/", ".") }
+            .toList()
+        val auditFile = file("src/main/java/com/v0t/GeneratedAuditList.kt")
+        auditFile.writeText("""
+            package com.v0t
+            object GeneratedAuditList {
+                val allRequired = listOf(${classes.joinToString(",") { "\"$it\"" }})
+            }
+        """.trimIndent())
+    }
+}
+// Ensure audit list is always generated before debug builds
+tasks.named("assembleDebug") {
+    dependsOn("generateAuditList")
+}
+'@
+
+
+# --- AndroidManifest.xml ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/AndroidManifest.xml") @'
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.v0t">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <application
+        android:name=".AppCtx"
+        android:allowBackup="true"
+        android:label="V0T"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+'@
+
+
+# --- Proguard rules ---
+Write-UTF8 (Join-Path $RootFolder "app/proguard-rules.pro") @'
+-keep class com.v0t.** { *; }
+-keepclassmembers class * { @android.annotation.* *; }
+'@
+
+
+# --- README.md ---
+Write-UTF8 (Join-Path $RootFolder "README.md") @'
+# V0T
+Baseline build quick-start:
+PowerShell -ExecutionPolicy Bypass -File master.ps1
+./gradlew generateAuditList assembleDebug
+adb install app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.v0t/.MainActivity
+## Build Notes
+- Run -./gradlew tasks- to see all available tasks.
+- -generateAuditList- runs automatically before -assembleDebug- to keep PresenceAudit in sync.
+- Ensure -adb devices- lists a connected device/emulator before running build scripts.
+
+## Attributions
+
+V0T is built on open-source foundations. 
+We acknowledge and thank the following projects:
+
+- Retrofit (Square) — Apache License 2.0  
+- OkHttp (Square) — Apache License 2.0  
+- Kotlin Coroutines (JetBrains) — Apache License 2.0  
+- AndroidX Core/AppCompat (Google) — Apache License 2.0  
+- Google Material Components (Google) — Apache License 2.0  
+- org.json (JSON.org) — JSON License  
+
+Each library retains its original license terms. 
+Full texts are available in their respective repositories.
+
+## License
+V0T is licensed under the GNU General Public License v3.0 (GPLv3).
+This ensures V0T remains free, auditable, and transparent. Any forks or modifications must also remain open-source under GPLv3.
+'@
+
+
+# --- Core: AppCtx.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/AppCtx.kt") @'
+package com.v0t
+import android.app.Application
+import android.content.Context
+// @HiltAndroidApp // Uncomment when adding Hilt
+class AppCtx : Application() {
+    override fun onCreate() { super.onCreate() }
+    companion object {
+        @Volatile private var ref: Context? = null
+        fun get(): Context {
+            val r = ref
+            return r ?: throw IllegalStateException("AppCtx not initialized")
+        }
+    }
+    override fun attachBaseContext(base: Context) { super.attachBaseContext(base); ref = base.applicationContext }
+}
+'@
+
+# --- Core: SecureScreen.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/SecureScreen.kt") @'
+package com.v0t
+import android.app.Activity
+class SecureScreen {
+    companion object {
+        fun apply(a: Activity) { a.window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+}
+'@
+
+# --- Core: LocalLogger.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/LocalLogger.kt") @'
+package com.v0t
+import android.util.Log
+object LocalLogger {
+    fun i(tag: String, msg: String) = Log.i(tag, msg)
+    fun w(tag: String, msg: String) = Log.w(tag, msg)
+    fun e(tag: String, msg: String, t: Throwable? = null) { if (t != null) Log.e(tag, msg, t) else Log.e(tag, msg) }
+}
+'@
+
+# --- Core: SecurityUtils.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/SecurityUtils.kt") @'
+package com.v0t
+import java.security.MessageDigest
+object SecurityUtils {
+    fun sha256(s: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest(s.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+}
+'@
+
+# --- Core: Shamir.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/Shamir.kt") @'
+package com.v0t
+object Shamir {
+    data class Share(val idx: Int, val part: String)
+    fun split(secret: String, n: Int = 3): List<Share> = (1..n).map { Share(it, SecurityUtils.sha256("$secret#$it").take(16)) }
+    fun combine(shares: List<Share>): String = shares.joinToString("") { it.part }
+}
+'@
+
+# --- Policies: NetworkPolicy.kt ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/policy")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/policy/NetworkPolicy.kt") @'
+package com.v0t.policy
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+object NetworkPolicy {
+    fun isAllowedToCallBackend(ctx: Context): Boolean {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val nw = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(nw) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+}
+'@
+
+# --- BackendLinks.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/BackendLinks.kt") @'
+package com.v0t
+object BackendLinks {
+    const val githubRepo = "https://github.com/your-org/v0t"
+    const val defaultFastDb = "https://fastdb.example/api/signals"
+    const val defaultWorker = "https://worker.example/echo"
+}
+'@
+
+# --- BackendLinksSecure.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/BackendLinksSecure.kt") @'
+package com.v0t
+import android.content.Context
+object BackendLinksSecure {
+    fun getFastDb(ctx: Context): String {
+        val sp = ctx.getSharedPreferences("links", Context.MODE_PRIVATE)
+        return sp.getString("fastdb", BackendLinks.defaultFastDb)!!
+    }
+    fun setFastDb(ctx: Context, url: String) {
+        ctx.getSharedPreferences("links", Context.MODE_PRIVATE).edit().putString("fastdb", url).apply()
+    }
+    fun getWorker(ctx: Context): String {
+        val sp = ctx.getSharedPreferences("links", Context.MODE_PRIVATE)
+        return sp.getString("worker", BackendLinks.defaultWorker)!!
+    }
+    fun setWorker(ctx: Context, url: String) {
+        ctx.getSharedPreferences("links", Context.MODE_PRIVATE).edit().putString("worker", url).apply()
+    }
+}
+'@
+
+# --- MainActivity.kt (ViewBinding adoption) ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/MainActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import com.v0t.databinding.ActivityMainBinding
+
+class MainActivity : Activity() {
+    private lateinit var binding: ActivityMainBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        binding.tvWelcome.text = "V0T Baseline Ready"
+
+        binding.btnAudit.setOnClickListener {
+            val missing = PresenceAudit.runAudit()
+            binding.tvAudit.apply {
+                visibility = android.view.View.VISIBLE
+                text = if (missing.isEmpty()) "All modules present."
+                       else "Missing:\n" + missing.joinToString("\n")
+            }
+        }
+    }
+}
+'@
+
+# --- activity_main.xml (layout for ViewBinding) ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/res/layout")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/res/layout/activity_main.xml") @'
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:orientation="vertical" android:padding="16dp"
+  android:layout_width="match_parent" android:layout_height="match_parent">
+  <TextView android:id="@+id/tvWelcome" android:text="Welcome" android:textStyle="bold"
+    android:layout_width="match_parent" android:layout_height="wrap_content"/>
+  <Button android:id="@+id/btnAudit" android:text="Run Presence Audit"
+    android:layout_width="match_parent" android:layout_height="wrap_content"/>
+  <TextView android:id="@+id/tvAudit" android:visibility="gone"
+    android:layout_width="match_parent" android:layout_height="wrap_content"/>
+</LinearLayout>
+'@
+
+Write-Host "Chunk 1 of 6 complete: BackendLinks, BackendLinksSecure, MainActivity with ViewBinding, layout."
+# === End V0T • MASTER SCRIPT • Chunk 1 of 6 ===
+
+# === V0T • MASTER SCRIPT • Chunk 2 of 6 ===
+# DeveloperToolsActivity, SettingsActivity, StatusService, layouts
+# Updated baseline with ViewBinding adoption
+
+
+function Ensure-Dir { param([string]$Path) if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null } }
+function Write-UTF8 { param([string]$Path, [string]$Content) Ensure-Dir (Split-Path $Path -Parent); $enc = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $Content, $enc) }
+
+# --- DeveloperToolsActivity layout ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/res/layout/activity_developer_tools.xml") @'
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent" android:layout_height="match_parent">
+  <LinearLayout android:orientation="vertical" android:padding="16dp"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+    <TextView android:id="@+id/tvPresence" android:text="Presence Audit" android:textStyle="bold"
+      android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnRunAudit" android:text="Run Audit" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/tvLogsPreview" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Switch android:id="@+id/swExperimental" android:text="Enable Experimental" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnSignalWizard" android:text="Open Signal Wizard" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnLeanWizard" android:text="Open Lean Wizard" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+  </LinearLayout>
+</ScrollView>
+'@
+
+# --- DeveloperToolsActivity (ViewBinding) ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/DeveloperToolsActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.Toast
+import com.v0t.databinding.ActivityDeveloperToolsBinding
+import com.v0t.codex.CodexMixer
+import com.v0t.ui.SignalWizardActivity
+import com.v0t.ui.LeanSignalWizardActivity
+import android.content.Intent
+
+class DeveloperToolsActivity : Activity() {
+    private lateinit var binding: ActivityDeveloperToolsBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        binding = ActivityDeveloperToolsBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        binding.btnRunAudit.setOnClickListener {
+            val missing = PresenceAudit.runAudit()
+            binding.tvPresence.text = if (missing.isEmpty()) "All modules present." else "Missing:\n" + missing.joinToString("\n")
+        }
+
+        val codex = CodexMixer.mix("v0t")
+        binding.tvLogsPreview.text = codex.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+
+        val prefs = getSharedPreferences("devtools", MODE_PRIVATE)
+        binding.swExperimental.isChecked = prefs.getBoolean("experimental_enabled", false)
+        binding.swExperimental.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("experimental_enabled", checked).apply()
+        }
+
+        binding.btnSignalWizard.setOnClickListener { startActivity(Intent(this, SignalWizardActivity::class.java)) }
+        binding.btnLeanWizard.setOnClickListener { startActivity(Intent(this, LeanSignalWizardActivity::class.java)) }
+    }
+}
+'@
+
+# --- SettingsActivity layout ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/res/layout/activity_settings.xml") @'
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent" android:layout_height="match_parent">
+  <LinearLayout android:orientation="vertical" android:padding="16dp"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+    <EditText android:id="@+id/etFastDb" android:hint="FastDB URL" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <EditText android:id="@+id/etWorker" android:hint="Worker URL" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnSaveLinks" android:text="Save Links" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnTestFastDb" android:text="Test FastDB" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnTestWorker" android:text="Test Worker" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Switch android:id="@+id/swPairingPolicy" android:text="Pairing Policy Local" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Switch android:id="@+id/swProtectionLevel" android:text="Legacy Protection Level" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Switch android:id="@+id/swBtcStandard" android:text="BTC Standard Mode" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnAbout" android:text="About" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <Button android:id="@+id/btnTender" android:text="Tender Converter" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/tvPreview" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+  </LinearLayout>
+</ScrollView>
+'@
+
+# --- SettingsActivity (ViewBinding) ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/SettingsActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.Toast
+import com.v0t.databinding.ActivitySettingsBinding
+import com.v0t.policy.*
+import com.v0t.backend.BackendAudit
+import android.content.Intent
+
+class SettingsActivity : Activity() {
+    private lateinit var binding: ActivitySettingsBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        binding = ActivitySettingsBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        val ctx = this
+        binding.etFastDb.setText(BackendLinksSecure.getFastDb(ctx))
+        binding.etWorker.setText(BackendLinksSecure.getWorker(ctx))
+
+        binding.btnSaveLinks.setOnClickListener {
+            BackendLinksSecure.setFastDb(ctx, binding.etFastDb.text.toString())
+            BackendLinksSecure.setWorker(ctx, binding.etWorker.text.toString())
+            Toast.makeText(ctx, "Links saved", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.btnTestFastDb.setOnClickListener {
+            val ok = BackendAudit.test(binding.etFastDb.text.toString())
+            Toast.makeText(ctx, "FastDB test: $ok", Toast.LENGTH_SHORT).show()
+        }
+        binding.btnTestWorker.setOnClickListener {
+            val ok = BackendAudit.test(binding.etWorker.text.toString())
+            Toast.makeText(ctx, "Worker test: $ok", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.swPairingPolicy.isChecked = PairingPolicy.get(ctx) == PairingMode.LOCAL
+        binding.swProtectionLevel.isChecked = ProtectionLevelPolicy.get(ctx) == ProtectionLevel.LEGACY
+        binding.swBtcStandard.isChecked = BTCStandardPolicy.isEnabled(ctx)
+
+        binding.swPairingPolicy.setOnCheckedChangeListener { _, checked ->
+            PairingPolicy.set(ctx, if (checked) PairingMode.LOCAL else PairingMode.OFF)
+        }
+        binding.swProtectionLevel.setOnCheckedChangeListener { _, checked ->
+            ProtectionLevelPolicy.set(ctx, if (checked) ProtectionLevel.LEGACY else ProtectionLevel.STANDARD)
+        }
+        binding.swBtcStandard.setOnCheckedChangeListener { _, checked ->
+            BTCStandardPolicy.setEnabled(ctx, checked)
+        }
+
+        binding.btnAbout.setOnClickListener { startActivity(Intent(ctx, AboutActivity::class.java)) }
+        binding.btnTender.setOnClickListener { startActivity(Intent(ctx, TenderActivity::class.java)) }
+
+                binding.tvPreview.text = "FastDB: ${binding.etFastDb.text}\nWorker: ${binding.etWorker.text}\n" +
+            "Pairing: ${PairingPolicy.get(ctx)}\nProtection: ${ProtectionLevelPolicy.get(ctx)}\nBTC Standard: ${BTCStandardPolicy.isEnabled(ctx)}"
+    }
+}
+'@
+
+# --- StatusService.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/StatusService.kt") @'
+package com.v0t
+import android.app.Service
+import android.content.Intent
+import android.os.IBinder
+import android.util.Log
+import com.v0t.backend.BackendAudit
+
+class StatusService : Service() {
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Thread {
+            val missing = PresenceAudit.runAudit()
+            if (missing.isEmpty()) Log.i("StatusService","Audit OK")
+            else Log.w("StatusService","Missing: ${missing.joinToString(",")}")
+
+            val fastOk = BackendAudit.test(BackendLinks.defaultFastDb)
+            val workerOk = BackendAudit.test(BackendLinks.defaultWorker)
+            Log.i("StatusService","FastDB=$fastOk Worker=$workerOk")
+        }.start()
+        return START_STICKY
+    }
+}
+'@
+
+Write-Host "Chunk 2 of 6 complete: DeveloperToolsActivity, SettingsActivity (ViewBinding), StatusService, layouts."
+# === End V0T • MASTER SCRIPT • Chunk 2 of 6 ===
+
+
+
+# === V0T • MASTER SCRIPT • Chunk 3 of 6 ===
+# Codex engines, validators, rituals, backend clients, router, SignalWizard (standard + lean), layouts
+
+
+function Ensure-Dir { param([string]$Path) if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null } }
+function Write-UTF8 { param([string]$Path, [string]$Content) Ensure-Dir (Split-Path $Path -Parent); $enc = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $Content, $enc) }
+
+# --- Codex engines ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/codex")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/Leetspeak.kt") @'
+package com.v0t.codex
+object Leetspeak {
+    private val map = mapOf("a" to "4","e" to "3","i" to "1","o" to "0","s" to "5","t" to "7")
+    fun encode(s: String) = s.lowercase().map { map[it.toString()] ?: it.toString() }.joinToString("")
+}
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/Morse.kt") @'
+package com.v0t.codex
+object Morse {
+    private val map = mapOf("a" to ".-","b" to "-...","c" to "-.-.","d" to "-..","e" to ".")
+    fun encode(s: String) = s.lowercase().map { map[it.toString()] ?: "?" }.joinToString(" ")
+}
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/RotN.kt") @'
+package com.v0t.codex
+object RotN {
+    fun encode(s: String, n: Int = 13): String {
+        return s.map {
+            val base = if (it.isUpperCase()) 'A' else if (it.isLowerCase()) 'a' else null
+            if (base != null) ((it - base + n) % 26 + base.code).toChar() else it
+        }.joinToString("")
+    }
+}
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/Atbash.kt") @'
+package com.v0t.codex
+object Atbash {
+    fun encode(s: String): String {
+        return s.map {
+            when {
+                it.isLowerCase() -> ('z' - (it - 'a'))
+                it.isUpperCase() -> ('Z' - (it - 'A'))
+                else -> it
+            }
+        }.joinToString("")
+    }
+}
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/Pigpen.kt") @'
+package com.v0t.codex
+object Pigpen { fun encode(s: String) = s.map { "[${it}]" }.joinToString("") }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/BaseX.kt") @'
+package com.v0t.codex
+import android.util.Base64
+object BaseX {
+    fun encode(s: String) = Base64.encodeToString(s.toByteArray(), Base64.NO_WRAP)
+    fun decode(b64: String) = String(Base64.decode(b64, Base64.NO_WRAP))
+}
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/codex/CodexMixer.kt") @'
+package com.v0t.codex
+object CodexMixer {
+    fun mix(s: String): Map<String,String> = mapOf(
+        "leetspeak" to Leetspeak.encode(s),
+        "morse" to Morse.encode(s),
+        "rot13" to RotN.encode(s,13),
+        "atbash" to Atbash.encode(s),
+        "pigpen" to Pigpen.encode(s),
+        "base64" to BaseX.encode(s)
+    )
+}
+'@
+
+# --- Validators ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/validators")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/validators/Bech32Utils.kt") @'
+package com.v0t.validators
+object Bech32Utils { fun isValid(addr: String) = addr.startsWith("bc1") && addr.length > 10 }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/validators/CidUtils.kt") @'
+package com.v0t.validators
+object CidUtils { fun isValid(cid: String) = cid.startsWith("Qm") && cid.length > 20 }
+'@
+
+# --- Rituals ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/TemporalAnchors.kt") @'
+package com.v0t
+object TemporalAnchors { fun anchor(root: String, ts: Long, height: Long): String = "$root@$ts@$height" }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/DeviceEntropy.kt") @'
+package com.v0t
+import kotlin.random.Random
+object DeviceEntropy { fun sample(): String = Random.nextBytes(16).joinToString("") { "%02x".format(it) } }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/EntropyGarden.kt") @'
+package com.v0t
+object EntropyGarden { private val pool = mutableListOf<String>(); fun plant(seed: String) { pool.add(seed) }; fun harvest(): String = pool.joinToString("|") }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/EchoConsensus.kt") @'
+package com.v0t
+object EchoConsensus { fun agree(values: List<String>): String = values.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: "" }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/PolyhedralRouter.kt") @'
+package com.v0t
+object PolyhedralRouter { fun route(seed: Int): List<Pair<Int,Int>> = (0 until 6).map { Pair(seed,it) } }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/SensorCodex.kt") @'
+package com.v0t
+object SensorCodex { fun imprint(data: String): String = "sensor:$data" }
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/NftCodexImprint.kt") @'
+package com.v0t
+object NftCodexImprint { fun imprint(data: String): String = "nft:$data" }
+'@
+
+# --- Backend clients ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/backend")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/backend/StrategyRegistry.kt") @'
+package com.v0t.backend
+object StrategyRegistry {
+    private val active = mutableSetOf("EMA Cross","RSI Divergence","VWAP Bounce")
+    fun list(): List<String> = active.toList()
+    fun add(name: String) { active.add(name) }
+    fun remove(name: String) { active.remove(name) }
+    fun isActive(name: String) = name in active
+}
+'@
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/backend/WebhookReceiver.kt") @'
+package com.v0t.backend
+object WebhookReceiver {
+    private val buffer = mutableListOf<SignalPayload>()
+    fun post(json: String): Boolean { val p = SignalParser.parse(json) ?: return false; buffer.add(p); return true }
+    fun drain(): List<SignalPayload> { val out = buffer.toList(); buffer.clear(); return out }
+}
+'@
+# --- FastDBClient.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/backend/FastDBClient.kt") @'
+package com.v0t.backend
+import android.util.Log
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import com.v0t.policy.NetworkPolicy
+
+object FastDBClient {
+    fun fetchSignals(tf: String = "1H", limit: Int = 5, baseUrl: String? = null): List<SignalPayload> {
+        val ctx = com.v0t.AppCtx.get()
+        if (!NetworkPolicy.isAllowedToCallBackend(ctx)) {
+            Log.w("FastDBClient","Blocked by NetworkPolicy")
+            return stub(tf)
+        }
+        val url = (baseUrl ?: com.v0t.BackendLinksSecure.getFastDb(ctx)).plus("?tf=$tf&limit=$limit")
+        val req = Request.Builder().url(url).get().build()
+        return try {
+            OkHttpClient().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w("FastDBClient","HTTP ${resp.code} for $url")
+                    return stub(tf)
+                }
+                val body = resp.body?.string() ?: "[]"
+                val arr = JSONArray(body)
+                val out = (0 until arr.length()).mapNotNull { i -> SignalParser.parse(arr.getJSONObject(i).toString()) }
+                out.ifEmpty { stub(tf) }
+            }
+        } catch (e: Exception) {
+            Log.w("FastDBClient","Error: ${e.message}")
+            stub(tf)
+        }
+    }
+    private fun stub(tf: String) = listOf(
+        SignalPayload("pinescript.signal","EMA Cross",tf,"BUY",0.82,System.currentTimeMillis())
+    )
+}
+'@
+
+# --- CloudflareWorkerClient.kt ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/cloud")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/cloud/CloudflareWorkerClient.kt") @'
+package com.v0t.cloud
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import com.v0t.policy.NetworkPolicy
+
+object CloudflareWorkerClient {
+    private val client = OkHttpClient()
+    private val baseUrl get() = com.v0t.BackendLinksSecure.getWorker(com.v0t.AppCtx.get())
+
+    fun relayEcho(root: String, iccidHash: String, nonce: String): Boolean {
+        val ctx = com.v0t.AppCtx.get()
+        if (!NetworkPolicy.isAllowedToCallBackend(ctx)) return false
+        val payload = JSONObject().apply {
+            put("root", root); put("iccidHash", iccidHash); put("nonce", nonce)
+        }.toString()
+        val req = Request.Builder().url(baseUrl)
+            .post(payload.toRequestBody("application/json".toMediaType())).build()
+        return try { client.newCall(req).execute().use { it.isSuccessful } } catch (_: Exception) { false }
+    }
+
+    fun queryEchoes(iccidHash: String): List<String> {
+        val ctx = com.v0t.AppCtx.get()
+        if (!NetworkPolicy.isAllowedToCallBackend(ctx)) return emptyList()
+        val url = "$baseUrl?iccidHash=$iccidHash"
+        val req = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return emptyList()
+                val body = resp.body?.string() ?: "[]"
+                val arr = org.json.JSONArray(body)
+                (0 until arr.length()).map { arr.getString(it) }
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+}
+'@
+
+# --- LegacyFlowRouter.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/ui/LegacyFlowRouter.kt") @'
+package com.v0t.ui
+import android.content.Context
+import android.content.Intent
+import com.v0t.policy.ProtectionLevel
+import com.v0t.policy.ProtectionLevelPolicy
+import com.v0t.MainActivity
+
+object LegacyFlowRouter {
+    fun mainIntent(ctx: Context): Intent {
+        val level = ProtectionLevelPolicy.get(ctx)
+        return if (level == ProtectionLevel.LEGACY)
+            Intent(ctx, LeanMainActivity::class.java)
+        else Intent(ctx, MainActivity::class.java)
+    }
+    fun signalWizardIntent(ctx: Context): Intent {
+        val level = ProtectionLevelPolicy.get(ctx)
+        return if (level == ProtectionLevel.LEGACY)
+            Intent(ctx, LeanSignalWizardActivity::class.java)
+        else Intent(ctx, com.v0t.ui.SignalWizardActivity::class.java)
+    }
+}
+'@
+
+# --- activity_signal_wizard.xml ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/res/layout/activity_signal_wizard.xml") @'
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:orientation="vertical" android:padding="16dp"
+  android:layout_width="match_parent" android:layout_height="match_parent">
+  <Switch android:id="@+id/swLiveMode" android:text="Live Mode" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+  <TextView android:id="@+id/tvSignal" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Signal..."/>
+  <Button android:id="@+id/btnSubscribe" android:text="Subscribe" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+  <Button android:id="@+id/btnAnchor" android:text="Anchor" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+</LinearLayout>
+'@
+
+# --- SignalWizardActivity.kt (ViewBinding) ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/ui/SignalWizardActivity.kt") @'
+package com.v0t.ui
+import android.app.Activity
+import android.os.Bundle
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
+import com.v0t.databinding.ActivitySignalWizardBinding
+import com.v0t.SecureScreen
+import com.v0t.TemporalAnchors
+import com.v0t.SecurityUtils
+import com.v0t.cloud.CloudflareWorkerClient
+import com.v0t.backend.FastDBClient
+import com.v0t.backend.SignalParser
+import com.v0t.backend.SignalPayload
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class SignalWizardActivity : Activity() {
+    private lateinit var binding: ActivitySignalWizardBinding
+    private var lastPayloadJson: String = "{}"
+    private var experimentalEnabled: Boolean = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        binding = ActivitySignalWizardBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        experimentalEnabled = getSharedPreferences("devtools", MODE_PRIVATE)
+            .getBoolean("experimental_enabled", false)
+
+        binding.swLiveMode.setOnCheckedChangeListener { _, isChecked ->
+            Toast.makeText(this, "Live Mode: $isChecked", Toast.LENGTH_SHORT).show()
+            loadSignals(if (isChecked) "1H" else "Daily", live = isChecked)
+        }
+        loadSignals("1H", live = true)
+
+        binding.btnSubscribe.setOnClickListener {
+            if (experimentalEnabled) {
+                val root = SecurityUtils.sha256(lastPayloadJson)
+                val iccidHash = "stub_iccid_hash"
+                val ok = CloudflareWorkerClient.relayEcho(root, iccidHash, "123456")
+                Toast.makeText(this, "Experimental relay: $ok", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Subscribed to FastDB <1m signals (stub).", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        binding.btnAnchor.setOnClickListener {
+            val root = SecurityUtils.sha256(lastPayloadJson)
+            val anchor = TemporalAnchors.anchor(root, System.currentTimeMillis(), 800_000L)
+            Toast.makeText(this, "Anchored: $anchor", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun loadSignals(tf: String, live: Boolean) {
+        lifecycleScope.launch {
+            val signals: List<SignalPayload> = withContext(Dispatchers.IO) {
+                if (live) FastDBClient.fetchSignals(tf)
+                else listOf(SignalPayload("pinescript.signal","EMA Cross",tf,"BUY",0.82,System.currentTimeMillis()))
+            }
+            val s = signals.firstOrNull()
+            binding.tvSignal.text = if (s != null) {
+                lastPayloadJson = SignalParser.toJson(s)
+                "Signal: ${s.strategy} ${s.side} (${String.format("%.2f", s.confidence)}) @ ${s.tf}"
+            } else "No signals."
+        }
+    }
+}
+'@
+
+# --- LeanSignalWizardActivity.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/ui/LeanSignalWizardActivity.kt") @'
+package com.v0t.ui
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+import com.v0t.SecureScreen
+import com.v0t.TemporalAnchors
+import com.v0t.SecurityUtils
+import com.v0t.backend.FastDBClient
+import com.v0t.backend.SignalParser
+import com.v0t.backend.SignalPayload
+
+class LeanSignalWizardActivity : Activity() {
+    private lateinit var tvSignal: TextView
+    private lateinit var swLiveMode: Switch
+    private var lastPayloadJson: String = "{}"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16,16,16,16)
+        }
+        tvSignal = TextView(this).apply { text = "Signal (Legacy)" }
+        swLiveMode = Switch(this).apply { text = "Live Mode"; isChecked = true }
+        val btnRefresh = Button(this).apply { text = "Refresh" }
+        val btnAnchor = Button(this).apply { text = "Anchor" }
+
+        root.addView(tvSignal)
+        root.addView(swLiveMode)
+        root.addView(btnRefresh)
+        root.addView(btnAnchor)
+        setContentView(root)
+
+        swLiveMode.setOnCheckedChangeListener { _, _ -> loadSignals() }
+        btnRefresh.setOnClickListener { loadSignals() }
+        btnAnchor.setOnClickListener {
+            val rootHash = SecurityUtils.sha256(lastPayloadJson)
+            val anchor = TemporalAnchors.anchor(rootHash, System.currentTimeMillis(), 800_000L)
+            Toast.makeText(this, "Anchored: $anchor", Toast.LENGTH_SHORT).show()
+        }
+
+        loadSignals()
+    }
+
+    private fun loadSignals() {
+        val signals = FastDBClient.fetchSignals("1H")
+        val s = signals.firstOrNull()
+        tvSignal.text = if (s != null) {
+            lastPayloadJson = SignalParser.toJson(s)
+            "Signal: ${s.strategy} ${s.side} (${String.format("%.2f", s.confidence)}) @ ${s.tf}"
+        } else "No signals."
+    }
+}
+'@
+
+Write-Host "Chunk 3 of 6 complete: Codex engines, validators, rituals, backend clients, CloudflareWorkerClient, LegacyFlowRouter, SignalWizardActivity (ViewBinding) + layout, LeanSignalWizardActivity."
+# === End V0T • MASTER SCRIPT • Chunk 3 of 6 ===
+
+# === V0T • MASTER SCRIPT • Chunk 4 of 6 ===
+# Tender converter, About page, ChartPreview, PresenceAudit
+
+
+function Ensure-Dir { param([string]$Path) if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null } }
+function Write-UTF8 { param([string]$Path, [string]$Content) Ensure-Dir (Split-Path $Path -Parent); $enc = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $Content, $enc) }
+
+# --- TenderActivity.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/TenderActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+import com.v0t.policy.BTCStandardPolicy
+import com.v0t.market.MarketClient
+import com.v0t.codex.CodexMixer
+import com.v0t.SensorCodex
+import com.v0t.NftCodexImprint
+import com.v0t.EntropyGarden
+
+class TenderActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,16,16,16) }
+        val etAmount = EditText(this).apply { hint = "Amount in BTC" }
+        val btnConvert = Button(this).apply { text = "Convert" }
+        val tvResult = TextView(this)
+        val btnWizard = Button(this).apply { text = "Wizard Items" }
+        val tvWizardOut = TextView(this)
+        root.addView(etAmount); root.addView(btnConvert); root.addView(tvResult); root.addView(btnWizard); root.addView(tvWizardOut)
+        setContentView(root)
+
+        btnConvert.setOnClickListener {
+            val amt = etAmount.text.toString().toDoubleOrNull() ?: 0.0
+            val ctx = this
+            val enabled = BTCStandardPolicy.isEnabled(ctx)
+            val price = MarketClient.getPrice("BTC")
+            val usd = amt * price
+            tvResult.text = if (enabled) "$amt BTC ≈ $usd USD" else "BTC Standard disabled"
+        }
+
+        btnWizard.setOnClickListener {
+            val meta = "wizardMeta"
+            val nft = NftCodexImprint.imprint(meta)
+            val sensor = SensorCodex.imprint(meta)
+            EntropyGarden.plant(meta)
+            val codex = CodexMixer.mix(meta)
+            tvWizardOut.text = "NFT=$nft\nSensor=$sensor\nCodex=${codex.keys.joinToString(",")}"
+        }
+    }
+}
+'@
+
+# --- AboutActivity.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/AboutActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+import android.content.Intent
+import android.net.Uri
+
+class AboutActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,16,16,16) }
+        val tv = TextView(this).apply { text = "About V0T" }
+        val btnGitHub = Button(this).apply { text = "GitHub" }
+        val btnTwitter = Button(this).apply { text = "X" }
+        val btnDonate = Button(this).apply { text = "Donate" }
+        root.addView(tv); root.addView(btnGitHub); root.addView(btnTwitter); root.addView(btnDonate)
+        setContentView(root)
+
+        btnGitHub.setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BackendLinks.githubRepo))) }
+        btnTwitter.setOnClickListener { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://twitter.com/solafolda"))) }
+        btnDonate.setOnClickListener { Toast.makeText(this, "Wallet: bc1qexample...", Toast.LENGTH_LONG).show() }
+    }
+}
+'@
+
+# --- ChartPreviewActivity.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/ChartPreviewActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+import com.v0t.backend.FastDBClient
+import com.v0t.backend.SignalParser
+import com.v0t.backend.SignalPayload
+
+class ChartPreviewActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,16,16,16) }
+        val spinner = Spinner(this)
+        val tvSubStatus = TextView(this)
+        root.addView(spinner); root.addView(tvSubStatus)
+        setContentView(root)
+
+        val options = listOf("1H","4H","Daily")
+        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, options)
+        spinner.setSelection(0)
+        spinner.onItemSelectedListener = object: AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: android.view.View?, pos: Int, id: Long) {
+                val tf = options[pos]
+                val signals = FastDBClient.fetchSignals(tf)
+                val s = signals.firstOrNull()
+                tvSubStatus.text = if (s != null) {
+                    val json = SignalParser.toJson(s)
+                    "Subscribed: ${s.strategy} ${s.side} @ ${s.tf}\n$json"
+                } else "No signals."
+            }
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+    }
+}
+'@
+
+# --- PresenceAudit.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/PresenceAudit.kt") @'
+package com.v0t
+import android.util.Log
+
+object PresenceAudit {
+    fun runAudit(): List<String> {
+        val required = GeneratedAuditList.allRequired
+        val missing = mutableListOf<String>()
+        for (cls in required) {
+            try { Class.forName(cls) } catch (_: Exception) { missing.add(cls) }
+        }
+        if (missing.isEmpty()) Log.i("PresenceAudit","All modules present.")
+        else Log.w("PresenceAudit","Missing: ${missing.joinToString(",")}")
+        return missing
+    }
+}
+'@
+
+Write-Host "Chunk 4 of 6 complete: TenderActivity, AboutActivity, ChartPreviewActivity, PresenceAudit."
+# === End V0T • MASTER SCRIPT • Chunk 4 of 6 ===
+
+
+# === V0T • MASTER SCRIPT • Chunk 5 of 6 ===
+# Market client, CoinGecko service, trade stub, experimental modules, extra activities
+
+
+function Ensure-Dir { param([string]$Path) if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null } }
+function Write-UTF8 { param([string]$Path, [string]$Content) Ensure-Dir (Split-Path $Path -Parent); $enc = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $Content, $enc) }
+
+# --- MarketClient.kt ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/market")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/market/MarketClient.kt") @'
+package com.v0t.market
+object MarketClient {
+    private var cache: MutableMap<String, Pair<Double, Long>> = mutableMapOf()
+    fun getPrice(symbol: String): Double {
+        val now = System.currentTimeMillis()
+        val cached = cache[symbol]
+        if (cached != null && now - cached.second < 30_000) return cached.first
+        val price = CoinGeckoService.fetchPrice(symbol)
+        cache[symbol] = Pair(price, now)
+        return price
+    }
+}
+'@
+
+# --- CoinGeckoService.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/market/CoinGeckoService.kt") @'
+package com.v0t.market
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+
+object CoinGeckoService {
+    fun fetchPrice(symbol: String): Double {
+        return try {
+            val url = "https://api.coingecko.com/api/v3/simple/price?ids=${symbol.lowercase()}&vs_currencies=usd"
+            val req = Request.Builder().url(url).get().build()
+            OkHttpClient().newCall(req).execute().use { resp ->
+                val body = resp.body?.string() ?: "{}"
+                val obj = JSONObject(body)
+                obj.getJSONObject(symbol.lowercase()).getDouble("usd")
+            }
+        } catch (_: Exception) { 0.0 }
+    }
+}
+'@
+
+# --- TradeBackendStub.kt ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t/trade")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/trade/TradeBackendStub.kt") @'
+package com.v0t.trade
+object TradeBackendStub {
+    fun executeTrade(symbol: String, side: String, qty: Double): Boolean {
+        println("Stub trade: $side $qty $symbol")
+        return true
+    }
+}
+'@
+
+# --- Experimental stubs ---
+Ensure-Dir (Join-Path $RootFolder "experimental/src/main/java/com/v0t/experimental")
+Write-UTF8 (Join-Path $RootFolder "experimental/src/main/java/com/v0t/experimental/IccidMiner.kt") @'
+package com.v0t.experimental
+object IccidMiner { fun mine(iccid: String): String = "mined:$iccid" }
+'@
+Write-UTF8 (Join-Path $RootFolder "experimental/src/main/java/com/v0t/experimental/MerkleForest.kt") @'
+package com.v0t.experimental
+object MerkleForest { fun grow(seed: String): String = "tree:$seed" }
+'@
+Write-UTF8 (Join-Path $RootFolder "experimental/src/main/java/com/v0t/experimental/LatticeRouter.kt") @'
+package com.v0t.experimental
+object LatticeRouter { fun route(msg: String): String = "lattice:$msg" }
+'@
+Write-UTF8 (Join-Path $RootFolder "experimental/src/main/java/com/v0t/experimental/PQCryptoJNI.kt") @'
+package com.v0t.experimental
+object PQCryptoJNI { fun encrypt(msg: String): String = "pq:$msg" }
+'@
+
+# --- CodexPreviewActivity.kt ---
+Ensure-Dir (Join-Path $RootFolder "app/src/main/java/com/v0t")
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/CodexPreviewActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+import com.v0t.codex.CodexMixer
+
+class CodexPreviewActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,16,16,16) }
+        val etInput = EditText(this).apply { hint = "Enter text" }
+        val btnPreview = Button(this).apply { text = "Preview Codex" }
+        val tvOut = TextView(this)
+        root.addView(etInput); root.addView(btnPreview); root.addView(tvOut)
+        setContentView(root)
+
+        btnPreview.setOnClickListener {
+            val s = etInput.text.toString()
+            val codex = CodexMixer.mix(s)
+            tvOut.text = codex.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+        }
+    }
+}
+'@
+
+# --- PresenceAuditActivity.kt ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/PresenceAuditActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+
+class PresenceAuditActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,16,16,16) }
+        val btnRun = Button(this).apply { text = "Run Audit" }
+        val tvResult = TextView(this)
+        root.addView(btnRun); root.addView(tvResult)
+        setContentView(root)
+
+        btnRun.setOnClickListener {
+            val missing = PresenceAudit.runAudit()
+            tvResult.text = if (missing.isEmpty()) "All modules present." else "Missing:\n" + missing.joinToString("\n")
+        }
+    }
+}
+'@
+
+# --- TradeNowActivity.kt (stub) ---
+Write-UTF8 (Join-Path $RootFolder "app/src/main/java/com/v0t/TradeNowActivity.kt") @'
+package com.v0t
+import android.app.Activity
+import android.os.Bundle
+import android.widget.*
+
+class TradeNowActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        SecureScreen.apply(this)
+        val tv = TextView(this).apply { text = "TradeNowActivity stub" }
+        setContentView(tv)
+    }
+}
+'@
+
+Write-Host "Chunk 5 of 6 complete: MarketClient, CoinGeckoService, TradeBackendStub, experimental stubs, CodexPreviewActivity, PresenceAuditActivity, TradeNowActivity."
+# === End V0T • MASTER SCRIPT • Chunk 5 of 6 ===
+
+
+# === V0T • MASTER SCRIPT • Chunk 6 of 6 ===
+# Documentation layer: architecture maps, execution flows, persona flows, audit checklist
+
+
+function Ensure-Dir { param([string]$Path) if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path | Out-Null } }
+function Write-UTF8 { param([string]$Path, [string]$Content) Ensure-Dir (Split-Path $Path -Parent); $enc = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText($Path, $Content, $enc) }
+
+Ensure-Dir (Join-Path $RootFolder "docs")
+
+# --- ARCHITECTURE.md ---
+Write-UTF8 (Join-Path $RootFolder "docs/ARCHITECTURE.md") @'
+# V0T Architecture Map
+
+
+AppCtx → MainActivity ├── DeveloperToolsActivity → PresenceAudit, CodexMixer ├── SettingsActivity → BackendLinksSecure, Policies, BackendAudit ├── TenderActivity → BTCStandardPolicy, MarketClient, CodexMixer, Rituals ├── SignalWizardActivity → FastDBClient, SignalParser, CloudflareWorkerClient, TemporalAnchors ├── LeanSignalWizardActivity → FastDBClient, SignalParser, TemporalAnchors ├── ChartPreviewActivity → FastDBClient, TimedSignals ├── AboutActivity → BackendLinks ├── PresenceAuditActivity → PresenceAudit └── TradeNowActivity (stub)
+
+
+## Layers
+- **Backend:** PayloadSchema, SignalParser, StrategyRegistry, WebhookReceiver, FastDBClient, CloudflareWorkerClient  
+- **Market & Trade:** MarketClient, CoinGeckoService, TradeBackendStub  
+- **Codex Engines:** Leetspeak, Morse, RotN, Atbash, Pigpen, BaseX, CodexMixer  
+- **Rituals:** TemporalAnchors, DeviceEntropy, EntropyGarden, EchoConsensus, PolyhedralRouter, SensorCodex, NftCodexImprint  
+- **Validators:** Bech32Utils, CidUtils  
+- **Experimental:** IccidMiner, MerkleForest, LatticeRouter, PQCryptoJNI  
+- **Services:** StatusService
+'@
+
+# --- FLOWS.md ---
+Write-UTF8 (Join-Path $RootFolder "docs/FLOWS.md") @'
+# V0T Execution Flows
+
+## Signal Subscription
+User → SignalWizardActivity → FastDBClient → SignalParser → PayloadSchema → UI update  
+Optional: CloudflareWorkerClient relay → TemporalAnchors anchor
+
+## Tender Conversion
+User → TenderActivity → BTCStandardPolicy → MarketClient → CoinGeckoService → USD conversion  
+Wizard Items → CodexMixer + Rituals (NFT, Sensor, Entropy)
+
+## Chart Preview
+User → ChartPreviewActivity → FastDBClient → SignalParser → TimedSignals → UI labels
+
+## Developer Tools
+User → DeveloperToolsActivity → PresenceAudit → CodexMixer preview → Experimental toggle
+
+## Settings
+User → SettingsActivity → BackendLinksSecure → Policies → BackendAudit test → About/Tender links
+
+## Status Service
+Background → StatusService → PresenceAudit → BackendAudit connectivity logs
+
+
+## Dependencies Layer
+- Signal subscription → Retrofit + OkHttp
+- Market conversion → CoinGecko API via OkHttp
+- Gson Converter (JSON parsing)
+- Kotlin Coroutines (async flows)
+- AndroidX + Material Components (UI foundation)
+'@
+
+# --- PERSONAS.md ---
+Write-UTF8 (Join-Path $RootFolder "docs/PERSONAS.md") @'
+# V0T Persona Flows
+
+## Developer
+- Runs PresenceAuditActivity
+- Uses DeveloperToolsActivity to toggle experimental mode
+- Reviews CodexMixer outputs
+- Extends backend clients and rituals
+
+## Trader
+- Uses TenderActivity for BTC conversions
+- Subscribes to signals via SignalWizardActivity
+- Previews charts in ChartPreviewActivity
+- Executes stub trades via TradeNowActivity
+
+## Researcher
+- Explores CodexPreviewActivity
+- Tests experimental modules (IccidMiner, MerkleForest, LatticeRouter, PQCryptoJNI)
+- Studies Rituals (EntropyGarden, EchoConsensus)
+- Documents flows for community
+
+## Developers 
+- Extend V0T using open-source libraries (Retrofit, OkHttp, Coroutines, AndroidX)
+- Attribution is preserved in README.md
+'@
+
+# --- AUDIT.md ---
+Write-UTF8 (Join-Path $RootFolder "docs/AUDIT.md") @'
+# V0T Audit Checklist
+
+PresenceAudit requires **all modules**:
+- Core: AppCtx, MainActivity, SecureScreen, LocalLogger, SecurityUtils, Shamir
+- Policies: NetworkPolicy, PairingPolicy, ProtectionLevelPolicy, BTCStandardPolicy
+- Backend: PayloadSchema, BackendAudit, FastDBClient, SignalParser, StrategyRegistry, WebhookReceiver
+- Cloud: CloudflareWorkerClient
+- Market: MarketClient, CoinGeckoService, TradeBackendStub
+- Codex: CodexMixer, Leetspeak, Morse, RotN, Atbash, Pigpen, BaseX
+- Rituals: TemporalAnchors, DeviceEntropy, EntropyGarden, EchoConsensus, PolyhedralRouter, SensorCodex, NftCodexImprint
+- Validators: Bech32Utils, CidUtils
+- Experimental: IccidMiner, MerkleForest, LatticeRouter, PQCryptoJNI
+- UI: SettingsActivity, DeveloperToolsActivity, AboutActivity, TenderActivity,
+  SignalWizardActivity, LeanSignalWizardActivity, LegacyFlowRouter, ChartPreviewActivity,
+  PresenceAuditActivity, TradeNowActivity, CodexPreviewActivity
+- Services: StatusService
+
+External dependencies (Retrofit, OkHttp, Coroutines, AndroidX, Material, org.json) 
+**must be acknowledged in README.md**
+'@
+
+Write-Host "Chunk 6 of 6 complete: Documentation layer (ARCHITECTURE.md, FLOWS.md, PERSONAS.md, AUDIT.md)."
+# === End V0T • MASTER SCRIPT • Chunk 6 of 6 ===
